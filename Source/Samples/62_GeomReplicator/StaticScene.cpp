@@ -89,6 +89,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
     }
 
     // create new indeces for the replicated size
+    bool isOver64k = qplist.Size() * numIndeces >= 1024 * 64;
     PODVector<unsigned short> newIndexList;
     PODVector<int> newIntIndexList;
 
@@ -101,10 +102,8 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
         }
     }
 
-    bool isOver64k = newIndexList.Size() >= 1024 * 64;
-    pIbuffer->SetSize(newIndexList.Size(), isOver64k );
-
     // cpy
+    pIbuffer->SetSize(newIndexList.Size(), isOver64k );
     pIndexData = (void*)pIbuffer->Lock(0, pIbuffer->GetIndexCount());
 
     if ( pIndexData )
@@ -291,9 +290,9 @@ void StaticScene::CreateStatusText()
 
     textStatus_ = ui->GetRoot()->CreateChild<Text>();
     textStatus_->SetText("");
-    textStatus_->SetFont(cache->GetResource<Font>("Fonts/Anonymous Pro.ttf"), 10);
+    textStatus_->SetFont(cache->GetResource<Font>("Fonts/Anonymous Pro.ttf"), 12);
     textStatus_->SetPosition(10, 10);
-    textStatus_->SetColor(Color::YELLOW);
+    textStatus_->SetColor(Color::WHITE);
 }
 
 void StaticScene::SetupViewport()
@@ -358,9 +357,8 @@ void StaticScene::HandleUpdate(StringHash eventType, VariantMap& eventData)
         sprintf(buff, "%.1f", cameraNode_->GetPosition().z_);
         z = String(buff);
 
-        stat.AppendWithFormat( "tris: %d, batches: %d, fps: %d, load time: %d", 
+        stat.AppendWithFormat( "tris: %d fps: %d load time: %d msec", 
                                renderer->GetNumPrimitives(),
-                               renderer->GetNumBatches(),
                                framesCount_,
                                timeToLoad_);
         //stat += x + y + z;
