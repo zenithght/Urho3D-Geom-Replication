@@ -1,9 +1,9 @@
-# Urho3D UI Geom Replication
+# Urho3D Geom Replication
 -----------------------------------------------------------------------------------
 
 Description
 -----------------------------------------------------------------------------------
-A demo to replicate geom multiple times into a single vertex buffer to improve performance.  Useful for objects such as grass, rocks, etc.
+A performance improvement demo by replicating geom multiple times into a single vertex buffer.  Useful for objects such as grass, rocks, etc.
 
 Screenshot
 -----------------------------------------------------------------------------------
