@@ -62,27 +62,25 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
     unsigned vertexSize = pVbuffer->GetVertexSize();
     unsigned numVertices = pVbuffer->GetVertexCount();
 
-    // sizes
+    // retain bbox as the size grows
+    BoundingBox bbox;
+
+    // retain the orig buff data
     unsigned origVertsBuffSize = vertexSize * numVertices;
     unsigned numIndeces = pIbuffer->GetIndexCount();
     unsigned origIdxBuffSize = numIndeces * sizeof(unsigned short);
-
-    PrimitiveType ptype = pGeometry->GetPrimitiveType();
-    BoundingBox bbox;
-
-    // cpy the orig buffers
     SharedArrayPtr<unsigned char> origVertBuff( new unsigned char[origVertsBuffSize] );
     SharedArrayPtr<unsigned short> origIdxBuff( new unsigned short[numIndeces] );
 
     const unsigned char *pVertexData = (const unsigned char*)pVbuffer->Lock(0, pVbuffer->GetVertexCount());
+    void *pIndexData = (void*)pIbuffer->Lock(0, pIbuffer->GetIndexCount());
 
-    // vbuff
+    // cpy orig buffs
     if (pVertexData)
     {
         memcpy(origVertBuff.Get(), pVertexData, origVertsBuffSize);
         pVbuffer->Unlock();
     }
-    void *pIndexData = (void*)pIbuffer->Lock(0, pIbuffer->GetIndexCount());
 
     if ( pIndexData )
     {
@@ -98,14 +96,15 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
     {
         for (unsigned j = 0; j < numIndeces; ++j)
         {
-            unsigned short idx = origIdxBuff[ j ];
             newIndexList.Push( i*numVertices + origIdxBuff[ j ] );
             newIntIndexList.Push( i*numVertices + origIdxBuff[ j ] );
         }
     }
+
     bool isOver64k = newIndexList.Size() >= 1024 * 64;
     pIbuffer->SetSize(newIndexList.Size(), isOver64k );
 
+    // cpy
     pIndexData = (void*)pIbuffer->Lock(0, pIbuffer->GetIndexCount());
 
     if ( pIndexData )
@@ -122,43 +121,51 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
         pIbuffer->Unlock();
     }
 
-    // dupe verts
+    // replicate verts
     pVbuffer->SetSize( numVertices * qplist.Size(), uElementMask );
-    unsigned nsize = pVbuffer->GetVertexCount();
-    unsigned nvertexSize = pVbuffer->GetVertexSize();
-
     pVertexData = (unsigned char*)pVbuffer->Lock(0, pVbuffer->GetVertexCount());
 
     if ( pVertexData )
     {
         for ( unsigned i = 0; i < qplist.Size(); ++i )
         {
-
-            Vector3 pos = qplist[i].pos;
             Quaternion rot(qplist[i].rot);
-            Matrix3x4 mat( pos, rot, qplist[i].scale);
+            Matrix3x4 mat(qplist[i].pos, rot, qplist[i].scale);
 
             for ( unsigned j = 0; j < numVertices; ++j )
             {
                 unsigned char *pOrigDataAlign = (unsigned char *)(origVertBuff.Get() + j * vertexSize);
                 unsigned char *pDataAlign = (unsigned char *)(pVertexData + (i * numVertices + j) * vertexSize);
+                unsigned sizeRemaining = vertexSize;
 
                 // position
-                const Vector3 vPos = *reinterpret_cast<Vector3*>( pOrigDataAlign );
+                const Vector3 &vPos = *reinterpret_cast<Vector3*>( pOrigDataAlign );
                 Vector3 &nPos = *reinterpret_cast<Vector3*>( pDataAlign );
                 nPos = mat * vPos;
 
+                pOrigDataAlign += sizeof(Vector3);
+                pDataAlign     += sizeof(Vector3);
+                sizeRemaining  -= sizeof(Vector3);
+
+                // bbox
                 bbox.Merge(nPos);
 
-                // normal
-                const Vector3 vNorm = *reinterpret_cast<Vector3*>( pOrigDataAlign + sizeof(Vector3) );
-                Vector3 &norm = *reinterpret_cast<Vector3*>( pDataAlign + sizeof(Vector3) );
-                norm = rot * vNorm;
+                // normal - let's not make any assumptions that the normals exist for every model
+                if ( uElementMask & MASK_NORMAL )
+                {
+                    const Vector3 &vNorm = *reinterpret_cast<Vector3*>( pOrigDataAlign );
+                    Vector3 &norm = *reinterpret_cast<Vector3*>( pDataAlign );
+                    norm = rot * vNorm;
+
+                    pOrigDataAlign += sizeof(Vector3);
+                    pDataAlign     += sizeof(Vector3);
+                    sizeRemaining  -= sizeof(Vector3);
+                }
                 
-                // how about tangent?
+                // how about tangents?
                 
-                // copy everything else excluding the position and normal
-                memcpy(pDataAlign + 2*sizeof(Vector3), pOrigDataAlign + 2*sizeof(Vector3), vertexSize - 2*sizeof(Vector3) );
+                // copy everything else excluding what's copied already
+                memcpy(pDataAlign, pOrigDataAlign, sizeRemaining );
             }
         }
 
@@ -168,7 +175,6 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
 
     // set draw range and bounding box
     pGeometry->SetDrawRange(TRIANGLE_LIST, 0, newIndexList.Size());
-
     SetBoundingBox( bbox );
 
     return qplist.Size();
@@ -352,7 +358,7 @@ void StaticScene::HandleUpdate(StringHash eventType, VariantMap& eventData)
         sprintf(buff, "%.1f", cameraNode_->GetPosition().z_);
         z = String(buff);
 
-        stat.AppendWithFormat( "tris: %d, batches: %d, fps: %d, load time=%d", 
+        stat.AppendWithFormat( "tris: %d, batches: %d, fps: %d, load time: %d", 
                                renderer->GetNumPrimitives(),
                                renderer->GetNumBatches(),
                                framesCount_,
