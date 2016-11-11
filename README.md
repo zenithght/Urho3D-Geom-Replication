@@ -3,6 +3,7 @@
 
 Description
 -----------------------------------------------------------------------------------
+A demo to replicate geom multiple times into a single vertex buffer to improve performance.  Useful for objects such as grass, rocks, etc.
 
 Screenshot
 -----------------------------------------------------------------------------------
