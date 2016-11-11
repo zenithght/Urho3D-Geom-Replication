@@ -76,7 +76,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
 
     const unsigned char *pVertexData = (const unsigned char*)pVbuffer->Lock(0, pVbuffer->GetVertexCount());
 
-    // copy orig buffer
+    // vbuff
     if (pVertexData)
     {
         memcpy(origVertBuff.Get(), pVertexData, origVertsBuffSize);
@@ -90,18 +90,6 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
         pIbuffer->Unlock();
     }
 
-    // find the max index value
-    unsigned maxIdxVal = 0;
-    for (unsigned i = 0; i < numIndeces; ++i )
-    {
-        if ( origIdxBuff[ i ] > maxIdxVal )
-        {
-            maxIdxVal = origIdxBuff[ i ];
-        }
-    }
-    // count for index 0
-    maxIdxVal++;
-
     // create new indeces for the replicated size
     PODVector<unsigned short> newIndexList;
     PODVector<int> newIntIndexList;
@@ -111,11 +99,11 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
         for (unsigned j = 0; j < numIndeces; ++j)
         {
             unsigned short idx = origIdxBuff[ j ];
-            newIndexList.Push( i*maxIdxVal + origIdxBuff[ j ] );
-            newIntIndexList.Push( i*maxIdxVal + origIdxBuff[ j ] );
+            newIndexList.Push( i*numVertices + origIdxBuff[ j ] );
+            newIntIndexList.Push( i*numVertices + origIdxBuff[ j ] );
         }
     }
-    bool isOver64k = newIndexList.Size() > 1024 * 64;
+    bool isOver64k = newIndexList.Size() >= 1024 * 64;
     pIbuffer->SetSize(newIndexList.Size(), isOver64k );
 
     pIndexData = (void*)pIbuffer->Lock(0, pIbuffer->GetIndexCount());
@@ -146,14 +134,14 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
         for ( unsigned i = 0; i < qplist.Size(); ++i )
         {
 
+            Vector3 pos = qplist[i].pos;
+            Quaternion rot(qplist[i].rot);
+            Matrix3x4 mat( pos, rot, qplist[i].scale);
+
             for ( unsigned j = 0; j < numVertices; ++j )
             {
                 unsigned char *pOrigDataAlign = (unsigned char *)(origVertBuff.Get() + j * vertexSize);
                 unsigned char *pDataAlign = (unsigned char *)(pVertexData + (i * numVertices + j) * vertexSize);
-
-                Vector3 pos = qplist[i].pos;
-                Quaternion rot(qplist[i].rot);
-                Matrix3x4 mat( pos, rot, qplist[i].scale);
 
                 // position
                 const Vector3 vPos = *reinterpret_cast<Vector3*>( pOrigDataAlign );
