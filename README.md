@@ -3,7 +3,6 @@
 
 Description
 -----------------------------------------------------------------------------------
-Utility to replicate geom into a single vertex buffer.  Useful for objects such as grass and rocks, etc.
 
 Screenshot
 -----------------------------------------------------------------------------------
