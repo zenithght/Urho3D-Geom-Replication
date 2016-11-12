@@ -128,10 +128,10 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
     }
 
     // replicate indeces
-    unsigned newIdxBuffSize = ReplicateIndeces(pIbuffer, numVertices, qplist.Size());
+    unsigned newIdxCount = ReplicateIndeces(pIbuffer, numVertices, qplist.Size());
 
     // set draw range and bounding box
-    pGeometry->SetDrawRange(TRIANGLE_LIST, 0, newIdxBuffSize);
+    pGeometry->SetDrawRange(TRIANGLE_LIST, 0, newIdxCount);
     SetBoundingBox( bbox );
 
     return qplist.Size();
@@ -141,7 +141,7 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
 {
     unsigned numIndeces = idxbuffer->GetIndexCount();
     unsigned origIdxBuffSize = numIndeces * sizeof(unsigned short);
-    unsigned newIdxBuffSize = expandSize * numIndeces;
+    unsigned newIdxCount = expandSize * numIndeces;
     SharedArrayPtr<unsigned short> origIdxBuff( new unsigned short[numIndeces] );
 
     void *pIndexData = (void*)idxbuffer->Lock(0, idxbuffer->GetIndexCount());
@@ -154,9 +154,9 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
     }
 
     // replicate indeces
-    if (newIdxBuffSize > 1024*64)
+    if (newIdxCount > 1024*64)
     {
-        PODVector<int> newIndexList(newIdxBuffSize);
+        PODVector<int> newIndexList(newIdxCount);
 
         for (unsigned i = 0; i < expandSize; ++i)
         {
@@ -166,12 +166,12 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
             }
         }
 
-        idxbuffer->SetSize(newIdxBuffSize, true);
+        idxbuffer->SetSize(newIdxCount, true);
         idxbuffer->SetData(&newIndexList[0]);
     }
     else
     {
-        PODVector<unsigned short> newIndexList(newIdxBuffSize);
+        PODVector<unsigned short> newIndexList(newIdxCount);
 
         for (unsigned i = 0; i < expandSize; ++i)
         {
@@ -181,11 +181,11 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
             }
         }
 
-        idxbuffer->SetSize(newIdxBuffSize, false);
+        idxbuffer->SetSize(newIdxCount, false);
         idxbuffer->SetData(&newIndexList[0]);
     }
 
-    return newIdxBuffSize;
+    return newIdxCount;
 }
 
 //=============================================================================
