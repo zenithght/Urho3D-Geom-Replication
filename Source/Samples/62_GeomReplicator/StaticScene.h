@@ -42,13 +42,29 @@ struct PRotScale
 class GeomReplicator : public StaticModel
 {
     URHO3D_OBJECT(GeomReplicator, StaticModel);
+
+    struct MoveAccumulator
+    {
+        MoveAccumulator() 
+            : origPos(Vector3::ZERO), deltaMovement(Vector3::ZERO), timeAccumlated(0), reversing(false)
+        {
+        }
+
+        Vector3 origPos;
+        Vector3 deltaMovement;
+        Timer   timer;
+        float   timeAccumlated;
+        bool    reversing;
+    };
+
 public:
     static void RegisterObject(Context* context)
     {
         context->RegisterFactory<GeomReplicator>();
     }
 
-    GeomReplicator(Context *context) : StaticModel(context)
+    GeomReplicator(Context *context) 
+        : StaticModel(context), numVertsPerGeom(0)
     {
     }
 
@@ -57,9 +73,30 @@ public:
     }
 
     unsigned Replicate(const PODVector<PRotScale> &qplist);
+    bool ApplyWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
+                           const Vector3 &velocity, float cycleTimer);
+    void StopWindVelocity(bool stop);
 
 protected:
     unsigned ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVertices, unsigned expandSize);
+    void MoveVerts();
+    void HandleUpdate(StringHash eventType, VariantMap& eventData);
+
+protected:
+    PODVector<MoveAccumulator>  movementList_;
+    PODVector<unsigned>         vertIndecesToMove_;
+
+    unsigned                    numVertsPerGeom;
+    unsigned                    batchCount_;
+    unsigned                    currentVertexIdx_;
+    Timer                       timerUpdate_;
+    Vector3                     windVelocity_;
+    float                       cycleTimer_;
+    float                       timeStepAccum_;
+
+protected:
+    enum FrameRateType { FrameRate_MSec = 32   };
+    enum MaxTimeType   { MaxTime_Elapsed = 1000 };
 };
 
 //=============================================================================

@@ -61,6 +61,9 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
     unsigned vertexSize = pVbuffer->GetVertexSize();
     unsigned numVertices = pVbuffer->GetVertexCount();
 
+    // for movement
+    numVertsPerGeom = numVertices;
+
     // retain bbox as the size grows
     BoundingBox bbox;
 
@@ -100,6 +103,11 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
                 pOrigDataAlign += sizeof(Vector3);
                 pDataAlign     += sizeof(Vector3);
                 sizeRemaining  -= sizeof(Vector3);
+
+                // for movement
+                MoveAccumulator movPt;
+                movPt.origPos = nPos;
+                movementList_.Push(movPt);
 
                 // bbox
                 bbox.Merge(nPos);
@@ -186,6 +194,140 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
     }
 
     return newIdxCount;
+}
+
+bool GeomReplicator::ApplyWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
+                                       const Vector3 &velocity, float cycleTimer)
+{
+    vertIndecesToMove_ = vertIndecesToMove;
+    windVelocity_      = velocity;
+    cycleTimer_        = cycleTimer;
+    batchCount_        = batchCount;
+    currentVertexIdx_   = 0;
+    timeStepAccum_     = 0.0f;
+
+    // validate vert indeces
+    for ( unsigned i = 0; i < vertIndecesToMove.Size(); ++i )
+    {
+        assert(vertIndecesToMove[i] < numVertsPerGeom && "your vert index must be contained within the original size" );
+    }
+
+    timerUpdate_.Reset();
+    SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(GeomReplicator, HandleUpdate));
+    return true;
+}
+
+void GeomReplicator::MoveVerts()
+{
+    Geometry *pGeometry = GetModel()->GetGeometry(0, 0);
+    VertexBuffer *pVbuffer = pGeometry->GetVertexBuffer(0);
+    unsigned vertexSize = pVbuffer->GetVertexSize();
+    unsigned vertsToMove = 0;
+
+    for ( unsigned i = 0; i < batchCount_; ++i )
+    {
+        unsigned idx = (currentVertexIdx_ + i)*numVertsPerGeom;
+
+        if (idx >= movementList_.Size() )
+            break;
+
+        vertsToMove++;
+
+        for ( unsigned j = 0; j < vertIndecesToMove_.Size(); ++j )
+        {
+            unsigned verIdx = idx + vertIndecesToMove_[j];
+            int ielptime = movementList_[verIdx].timer.GetMSec(true);
+            if ( ielptime > MaxTime_Elapsed ) ielptime = MaxTime_Elapsed;
+
+            float elapsedTime = (float)ielptime / 1000.0f;
+            
+            if ( !movementList_[verIdx].reversing )
+            {
+                Vector3 delta = windVelocity_ * elapsedTime;
+                movementList_[verIdx].deltaMovement += delta;
+                movementList_[verIdx].timeAccumlated += elapsedTime;
+
+                if ( movementList_[verIdx].timeAccumlated > cycleTimer_ )
+                {
+                    movementList_[verIdx].reversing = true;
+                }
+            }
+            else
+            {
+                // slowing it on the way back
+                elapsedTime *= 0.5f;
+                Vector3 delta = windVelocity_ * elapsedTime;
+                movementList_[verIdx].deltaMovement -= delta;
+                movementList_[verIdx].timeAccumlated -= elapsedTime;
+
+                if ( movementList_[verIdx].timeAccumlated < 0.0f )
+                {
+                    movementList_[verIdx].deltaMovement = Vector3::ZERO;
+                    movementList_[verIdx].timeAccumlated = 0.0f;
+                    movementList_[verIdx].reversing = false;
+                }
+            }
+        }
+    }
+
+    // update movement
+    unsigned char *pVertexData = (unsigned char*)pVbuffer->Lock(currentVertexIdx_ * numVertsPerGeom, vertsToMove * numVertsPerGeom);
+
+    if ( pVertexData )
+    {
+        for ( unsigned i = 0; i < batchCount_; ++i )
+        {
+            unsigned idx = (currentVertexIdx_ + i)*numVertsPerGeom;
+
+            if (idx >= movementList_.Size() )
+                break;
+
+            for ( unsigned j = 0; j < vertIndecesToMove_.Size(); ++j )
+            {
+                unsigned verIdx = idx + vertIndecesToMove_[j];
+                unsigned char *pDataAlign = (unsigned char *)(pVertexData + (i*numVertsPerGeom + vertIndecesToMove_[j]) * vertexSize );
+
+                Vector3 &pos = *reinterpret_cast<Vector3*>( pDataAlign );
+                pos = movementList_[verIdx].origPos + movementList_[verIdx].deltaMovement;
+            }
+        }
+
+        pVbuffer->Unlock();
+    }
+
+    // update batch idx
+    currentVertexIdx_ += batchCount_;
+
+    if (currentVertexIdx_*numVertsPerGeom >= movementList_.Size()) 
+    {
+        currentVertexIdx_ = 0;
+    }
+}
+
+void GeomReplicator::StopWindVelocity(bool stop)
+{
+    if (stop)
+    {
+        SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(GeomReplicator, HandleUpdate));
+    }
+    else
+    {
+        UnsubscribeFromEvent(E_UPDATE);
+    }
+}
+
+void GeomReplicator::HandleUpdate(StringHash eventType, VariantMap& eventData)
+{
+    using namespace Update;
+
+    float timeStep = eventData[P_TIMESTEP].GetFloat();
+
+    if ( timerUpdate_.GetMSec(false) >= FrameRate_MSec )
+    {
+        MoveVerts();
+
+        timerUpdate_.Reset();
+    }
 }
 
 //=============================================================================
@@ -280,6 +422,23 @@ void StaticScene::CreateScene()
         vegReplicator_->SetModel( cloneModel );
         vegReplicator_->SetMaterial(cache->GetResource<Material>("Models/Veg/veg-alphamask.xml"));
         vegReplicator_->Replicate(qpList_);
+
+        // specify which verts in the geom to move
+        // - for the vegbrush model, the top vert indeces are index 2 and 3
+        PODVector<unsigned> topVerts;
+        topVerts.Push(2);
+        topVerts.Push(3);
+
+        // specify the number of geoms to update at a time
+        unsigned batchCount = 10000;
+
+        // wind velocity (breeze velocity shown)
+        Vector3 windVel(0.2f, -0.2f, 0.2f);
+
+        // specify the cycle timer
+        float cycleTimer = 0.4f;
+
+        vegReplicator_->ApplyWindVelocity(topVerts, batchCount, windVel, cycleTimer);
     }
 
     // camera
