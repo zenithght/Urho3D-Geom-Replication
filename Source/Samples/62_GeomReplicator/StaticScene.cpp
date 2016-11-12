@@ -54,8 +54,7 @@
 //=============================================================================
 unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
 {
-    Model *pModel = GetModel();
-    Geometry *pGeometry = pModel->GetGeometry(0, 0);
+    Geometry *pGeometry = GetModel()->GetGeometry(0, 0);
     VertexBuffer *pVbuffer = pGeometry->GetVertexBuffer(0);
     IndexBuffer *pIbuffer = pGeometry->GetIndexBuffer();
     unsigned uElementMask = pVbuffer->GetElementMask();
@@ -65,62 +64,18 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
     // retain bbox as the size grows
     BoundingBox bbox;
 
-    // retain the orig buff data
+    // cpy orig vbuffs
     unsigned origVertsBuffSize = vertexSize * numVertices;
-    unsigned numIndeces = pIbuffer->GetIndexCount();
-    unsigned origIdxBuffSize = numIndeces * sizeof(unsigned short);
     SharedArrayPtr<unsigned char> origVertBuff( new unsigned char[origVertsBuffSize] );
-    SharedArrayPtr<unsigned short> origIdxBuff( new unsigned short[numIndeces] );
-
     const unsigned char *pVertexData = (const unsigned char*)pVbuffer->Lock(0, pVbuffer->GetVertexCount());
-    void *pIndexData = (void*)pIbuffer->Lock(0, pIbuffer->GetIndexCount());
 
-    // cpy orig buffs
     if (pVertexData)
     {
         memcpy(origVertBuff.Get(), pVertexData, origVertsBuffSize);
         pVbuffer->Unlock();
     }
 
-    if ( pIndexData )
-    {
-        memcpy(origIdxBuff.Get(), pIndexData, origIdxBuffSize);
-        pIbuffer->Unlock();
-    }
-
-    // create new indeces for the replicated size
-    bool isOver64k = qplist.Size() * numIndeces >= 1024 * 64;
-    PODVector<unsigned short> newIndexList;
-    PODVector<int> newIntIndexList;
-
-    for ( unsigned i = 0; i < qplist.Size(); ++i )
-    {
-        for (unsigned j = 0; j < numIndeces; ++j)
-        {
-            newIndexList.Push( i*numVertices + origIdxBuff[ j ] );
-            newIntIndexList.Push( i*numVertices + origIdxBuff[ j ] );
-        }
-    }
-
-    // cpy
-    pIbuffer->SetSize(newIndexList.Size(), isOver64k );
-    pIndexData = (void*)pIbuffer->Lock(0, pIbuffer->GetIndexCount());
-
-    if ( pIndexData )
-    {
-        if ( isOver64k )
-        {
-            memcpy(pIndexData, &newIntIndexList[0], sizeof(int) * newIntIndexList.Size());
-        }
-        else
-        {
-            memcpy(pIndexData, &newIndexList[0], sizeof(unsigned short) * newIndexList.Size());
-        }
-
-        pIbuffer->Unlock();
-    }
-
-    // replicate verts
+    // replicate
     pVbuffer->SetSize( numVertices * qplist.Size(), uElementMask );
     pVertexData = (unsigned char*)pVbuffer->Lock(0, pVbuffer->GetVertexCount());
 
@@ -164,19 +119,73 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
                 // how about tangents?
                 
                 // copy everything else excluding what's copied already
-                memcpy(pDataAlign, pOrigDataAlign, sizeRemaining );
+                memcpy(pDataAlign, pOrigDataAlign, sizeRemaining);
             }
         }
 
         //unlock
         pVbuffer->Unlock();
-   }
+    }
+
+    // replicate indeces
+    unsigned newIdxBuffSize = ReplicateIndeces(pIbuffer, numVertices, qplist.Size());
 
     // set draw range and bounding box
-    pGeometry->SetDrawRange(TRIANGLE_LIST, 0, newIndexList.Size());
+    pGeometry->SetDrawRange(TRIANGLE_LIST, 0, newIdxBuffSize);
     SetBoundingBox( bbox );
 
     return qplist.Size();
+}
+
+unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVertices, unsigned expandSize)
+{
+    unsigned numIndeces = idxbuffer->GetIndexCount();
+    unsigned origIdxBuffSize = numIndeces * sizeof(unsigned short);
+    unsigned newIdxBuffSize = expandSize * numIndeces;
+    SharedArrayPtr<unsigned short> origIdxBuff( new unsigned short[numIndeces] );
+
+    void *pIndexData = (void*)idxbuffer->Lock(0, idxbuffer->GetIndexCount());
+
+    // copy orig indeces
+    if (pIndexData)
+    {
+        memcpy(origIdxBuff.Get(), pIndexData, origIdxBuffSize);
+        idxbuffer->Unlock();
+    }
+
+    // replicate indeces
+    if (newIdxBuffSize > 1024*64)
+    {
+        PODVector<int> newIndexList(newIdxBuffSize);
+
+        for (unsigned i = 0; i < expandSize; ++i)
+        {
+            for (unsigned j = 0; j < numIndeces; ++j)
+            {
+                newIndexList[i*numIndeces + j] = i*numVertices + origIdxBuff[j];
+            }
+        }
+
+        idxbuffer->SetSize(newIdxBuffSize, true);
+        idxbuffer->SetData(&newIndexList[0]);
+    }
+    else
+    {
+        PODVector<unsigned short> newIndexList(newIdxBuffSize);
+
+        for (unsigned i = 0; i < expandSize; ++i)
+        {
+            for (unsigned j = 0; j < numIndeces; ++j)
+            {
+                newIndexList[i*numIndeces + j] = i*numVertices + origIdxBuff[j];
+            }
+        }
+
+        idxbuffer->SetSize(newIdxBuffSize, false);
+        idxbuffer->SetData(&newIndexList[0]);
+    }
+
+    return newIdxBuffSize;
 }
 
 //=============================================================================

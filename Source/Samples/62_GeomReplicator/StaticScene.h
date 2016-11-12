@@ -59,7 +59,7 @@ public:
     unsigned Replicate(const PODVector<PRotScale> &qplist);
 
 protected:
-
+    unsigned ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVertices, unsigned expandSize);
 };
 
 //=============================================================================
