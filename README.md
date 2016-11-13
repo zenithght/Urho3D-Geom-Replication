@@ -7,16 +7,13 @@ A performance improvement demo by replicating geom multiple times into a single 
 
 Screenshot
 -----------------------------------------------------------------------------------
-#### Rendered with normals override option
-![alt tag](https://github.com/Lumak/Urho3D-Geom-Replication/blob/master/screenshot/replicatedGeom4.jpg)
-
-#### Grass created normally using Node class
+#### Grass created individually using StaticModel on Nodes
 ![alt tag](https://github.com/Lumak/Urho3D-Geom-Replication/blob/master/screenshot/replicatedGeom1.jpg)
 
-#### Grass replicated 10k times into a single vbuff
+#### Grass replicated 10k times into a single vbuff w/ normal override option
 ![alt tag](https://github.com/Lumak/Urho3D-Geom-Replication/blob/master/screenshot/replicatedGeom2.jpg)
 
-#### Grass replicated 50k times into a single vbuff
+#### Grass replicated 50k times into a single vbuff w/ normal override option
 ![alt tag](https://github.com/Lumak/Urho3D-Geom-Replication/blob/master/screenshot/replicatedGeom3.jpg)
 
 To Build
