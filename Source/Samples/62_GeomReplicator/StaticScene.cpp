@@ -52,7 +52,7 @@
 
 //=============================================================================
 //=============================================================================
-unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
+unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vector3 &normal)
 {
     Geometry *pGeometry = GetModel()->GetGeometry(0, 0);
     VertexBuffer *pVbuffer = pGeometry->GetVertexBuffer(0);
@@ -81,6 +81,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
     // replicate
     pVbuffer->SetSize( numVertices * qplist.Size(), uElementMask );
     pVertexData = (unsigned char*)pVbuffer->Lock(0, pVbuffer->GetVertexCount());
+    bool overrideNormal = normal != Vector3::ZERO;
 
     if ( pVertexData )
     {
@@ -117,7 +118,15 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist)
                 {
                     const Vector3 &vNorm = *reinterpret_cast<Vector3*>( pOrigDataAlign );
                     Vector3 &norm = *reinterpret_cast<Vector3*>( pDataAlign );
-                    norm = rot * vNorm;
+
+                    if ( !overrideNormal )
+                    {
+                        norm = rot * vNorm;
+                    }
+                    else
+                    {
+                        norm = normal;
+                    }
 
                     pOrigDataAlign += sizeof(Vector3);
                     pDataAlign     += sizeof(Vector3);
@@ -384,7 +393,8 @@ void StaticScene::CreateScene()
     planeObject->SetMaterial(cache->GetResource<Material>("Materials/StoneTiled.xml"));
 
     Node* lightNode = scene_->CreateChild("DirectionalLight");
-    lightNode->SetDirection(Vector3(0.6f, -1.0f, 0.8f)); 
+    Vector3 lightDir(0.6f, -1.0f, 0.8f);
+    lightNode->SetDirection(lightDir); 
     Light* light = lightNode->CreateComponent<Light>();
     light->SetLightType(LIGHT_DIRECTIONAL);
 
@@ -421,7 +431,9 @@ void StaticScene::CreateScene()
         vegReplicator_ = nodeRep_->CreateComponent<GeomReplicator>();
         vegReplicator_->SetModel( cloneModel );
         vegReplicator_->SetMaterial(cache->GetResource<Material>("Models/Veg/veg-alphamask.xml"));
-        vegReplicator_->Replicate(qpList_);
+
+        lightDir = -1.0f * lightDir.Normalized();
+        vegReplicator_->Replicate(qpList_, lightDir );
 
         // specify which verts in the geom to move
         // - for the vegbrush model, the top vert indeces are index 2 and 3

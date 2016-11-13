@@ -46,8 +46,9 @@ class GeomReplicator : public StaticModel
     struct MoveAccumulator
     {
         MoveAccumulator() 
-            : origPos(Vector3::ZERO), deltaMovement(Vector3::ZERO), timeAccumlated(0), reversing(false)
+            : origPos(Vector3::ZERO), deltaMovement(Vector3::ZERO), reversing(false)
         {
+            timeAccumlated = Random() * 0.2f;
         }
 
         Vector3 origPos;
@@ -72,7 +73,7 @@ public:
     {
     }
 
-    unsigned Replicate(const PODVector<PRotScale> &qplist);
+    unsigned Replicate(const PODVector<PRotScale> &qplist, const Vector3 &normal=Vector3::ZERO);
     bool ApplyWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
                            const Vector3 &velocity, float cycleTimer);
     void StopWindVelocity(bool stop);
