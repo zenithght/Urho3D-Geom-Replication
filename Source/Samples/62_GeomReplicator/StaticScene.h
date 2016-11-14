@@ -65,7 +65,7 @@ public:
     }
 
     GeomReplicator(Context *context) 
-        : StaticModel(context), numVertsPerGeom(0)
+        : StaticModel(context), numVertsPerGeom(0), batchCount_(0)
     {
     }
 
@@ -73,18 +73,18 @@ public:
     {
     }
 
-    unsigned Replicate(const PODVector<PRotScale> &qplist, const Vector3 &normal=Vector3::ZERO);
-    bool ApplyWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
-                           const Vector3 &velocity, float cycleTimer);
-    void StopWindVelocity(bool stop);
+    unsigned Replicate(const PODVector<PRotScale> &qplist, const Vector3 &normalOverride=Vector3::ZERO);
+    bool ConfigWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
+                            const Vector3 &velocity, float cycleTimer);
+    void WindAnimationEnabled(bool enable);
 
 protected:
     unsigned ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVertices, unsigned expandSize);
-    void MoveVerts();
+    void AnimateVerts();
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
 
 protected:
-    PODVector<MoveAccumulator>  movementList_;
+    PODVector<MoveAccumulator>  animatedVertexList_;
     PODVector<unsigned>         vertIndecesToMove_;
 
     unsigned                    numVertsPerGeom;
@@ -96,7 +96,7 @@ protected:
     float                       timeStepAccum_;
 
 protected:
-    enum FrameRateType { FrameRate_MSec = 32   };
+    enum FrameRateType { FrameRate_MSec = 32    };
     enum MaxTimeType   { MaxTime_Elapsed = 1000 };
 };
 

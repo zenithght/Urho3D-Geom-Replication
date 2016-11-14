@@ -52,7 +52,7 @@
 
 //=============================================================================
 //=============================================================================
-unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vector3 &normal)
+unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vector3 &normalOverride)
 {
     Geometry *pGeometry = GetModel()->GetGeometry(0, 0);
     VertexBuffer *pVbuffer = pGeometry->GetVertexBuffer(0);
@@ -81,7 +81,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
     // replicate
     pVbuffer->SetSize( numVertices * qplist.Size(), uElementMask );
     pVertexData = (unsigned char*)pVbuffer->Lock(0, pVbuffer->GetVertexCount());
-    bool overrideNormal = normal != Vector3::ZERO;
+    bool overrideNormal = normalOverride != Vector3::ZERO;
 
     if ( pVertexData )
     {
@@ -108,7 +108,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
                 // for movement
                 MoveAccumulator movPt;
                 movPt.origPos = nPos;
-                movementList_.Push(movPt);
+                animatedVertexList_.Push(movPt);
 
                 // bbox
                 bbox.Merge(nPos);
@@ -125,7 +125,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
                     }
                     else
                     {
-                        norm = normal;
+                        norm = normalOverride;
                     }
 
                     pOrigDataAlign += sizeof(Vector3);
@@ -159,11 +159,12 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
     unsigned numIndeces = idxbuffer->GetIndexCount();
     unsigned origIdxBuffSize = numIndeces * sizeof(unsigned short);
     unsigned newIdxCount = expandSize * numIndeces;
+    bool isOver64k = newIdxCount > 1024*64;
     SharedArrayPtr<unsigned short> origIdxBuff( new unsigned short[numIndeces] );
 
+    // copy orig indeces
     void *pIndexData = (void*)idxbuffer->Lock(0, idxbuffer->GetIndexCount());
 
-    // copy orig indeces
     if (pIndexData)
     {
         memcpy(origIdxBuff.Get(), pIndexData, origIdxBuffSize);
@@ -171,7 +172,7 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
     }
 
     // replicate indeces
-    if (newIdxCount > 1024*64)
+    if (isOver64k)
     {
         PODVector<int> newIndexList(newIdxCount);
 
@@ -205,81 +206,83 @@ unsigned GeomReplicator::ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVe
     return newIdxCount;
 }
 
-bool GeomReplicator::ApplyWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
-                                       const Vector3 &velocity, float cycleTimer)
+bool GeomReplicator::ConfigWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
+                                        const Vector3 &velocity, float cycleTimer)
 {
     vertIndecesToMove_ = vertIndecesToMove;
     windVelocity_      = velocity;
     cycleTimer_        = cycleTimer;
     batchCount_        = batchCount;
-    currentVertexIdx_   = 0;
+    currentVertexIdx_  = 0;
     timeStepAccum_     = 0.0f;
 
     // validate vert indeces
+    assert(vertIndecesToMove.Size() <= numVertsPerGeom && "number of indeces to move is greater than the orig geom index size");
+
     for ( unsigned i = 0; i < vertIndecesToMove.Size(); ++i )
     {
-        assert(vertIndecesToMove[i] < numVertsPerGeom && "your vert index must be contained within the original size" );
+        assert(vertIndecesToMove[i] < numVertsPerGeom && "vert index must be contained within the original geom size" );
     }
 
     timerUpdate_.Reset();
-    SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(GeomReplicator, HandleUpdate));
     return true;
 }
 
-void GeomReplicator::MoveVerts()
+void GeomReplicator::AnimateVerts()
 {
     Geometry *pGeometry = GetModel()->GetGeometry(0, 0);
     VertexBuffer *pVbuffer = pGeometry->GetVertexBuffer(0);
     unsigned vertexSize = pVbuffer->GetVertexSize();
     unsigned vertsToMove = 0;
 
+    // update animation
     for ( unsigned i = 0; i < batchCount_; ++i )
     {
         unsigned idx = (currentVertexIdx_ + i)*numVertsPerGeom;
 
-        if (idx >= movementList_.Size() )
+        if (idx >= animatedVertexList_.Size() )
             break;
 
         vertsToMove++;
 
         for ( unsigned j = 0; j < vertIndecesToMove_.Size(); ++j )
         {
-            unsigned verIdx = idx + vertIndecesToMove_[j];
-            int ielptime = movementList_[verIdx].timer.GetMSec(true);
+            unsigned vertIdx = idx + vertIndecesToMove_[j];
+            int ielptime = animatedVertexList_[vertIdx].timer.GetMSec(true);
             if ( ielptime > MaxTime_Elapsed ) ielptime = MaxTime_Elapsed;
 
             float elapsedTime = (float)ielptime / 1000.0f;
             
-            if ( !movementList_[verIdx].reversing )
+            if ( !animatedVertexList_[vertIdx].reversing )
             {
                 Vector3 delta = windVelocity_ * elapsedTime;
-                movementList_[verIdx].deltaMovement += delta;
-                movementList_[verIdx].timeAccumlated += elapsedTime;
+                animatedVertexList_[vertIdx].deltaMovement += delta;
+                animatedVertexList_[vertIdx].timeAccumlated += elapsedTime;
 
-                if ( movementList_[verIdx].timeAccumlated > cycleTimer_ )
+                if ( animatedVertexList_[vertIdx].timeAccumlated > cycleTimer_ )
                 {
-                    movementList_[verIdx].reversing = true;
+                    animatedVertexList_[vertIdx].reversing = true;
                 }
             }
             else
             {
-                // slowing it on the way back
+                // slowed on reverse
                 elapsedTime *= 0.5f;
                 Vector3 delta = windVelocity_ * elapsedTime;
-                movementList_[verIdx].deltaMovement -= delta;
-                movementList_[verIdx].timeAccumlated -= elapsedTime;
+                animatedVertexList_[vertIdx].deltaMovement -= delta;
+                animatedVertexList_[vertIdx].timeAccumlated -= elapsedTime;
 
-                if ( movementList_[verIdx].timeAccumlated < 0.0f )
+                if ( animatedVertexList_[vertIdx].timeAccumlated < 0.0f )
                 {
-                    movementList_[verIdx].deltaMovement = Vector3::ZERO;
-                    movementList_[verIdx].timeAccumlated = 0.0f;
-                    movementList_[verIdx].reversing = false;
+                    animatedVertexList_[vertIdx].deltaMovement = Vector3::ZERO;
+                    animatedVertexList_[vertIdx].timeAccumlated = 0.0f;
+                    animatedVertexList_[vertIdx].reversing = false;
                 }
             }
         }
     }
 
-    // update movement
+    // update vertex buffer
     unsigned char *pVertexData = (unsigned char*)pVbuffer->Lock(currentVertexIdx_ * numVertsPerGeom, vertsToMove * numVertsPerGeom);
 
     if ( pVertexData )
@@ -288,16 +291,16 @@ void GeomReplicator::MoveVerts()
         {
             unsigned idx = (currentVertexIdx_ + i)*numVertsPerGeom;
 
-            if (idx >= movementList_.Size() )
+            if (idx >= animatedVertexList_.Size() )
                 break;
 
             for ( unsigned j = 0; j < vertIndecesToMove_.Size(); ++j )
             {
-                unsigned verIdx = idx + vertIndecesToMove_[j];
+                unsigned vertIdx = idx + vertIndecesToMove_[j];
                 unsigned char *pDataAlign = (unsigned char *)(pVertexData + (i*numVertsPerGeom + vertIndecesToMove_[j]) * vertexSize );
 
                 Vector3 &pos = *reinterpret_cast<Vector3*>( pDataAlign );
-                pos = movementList_[verIdx].origPos + movementList_[verIdx].deltaMovement;
+                pos = animatedVertexList_[vertIdx].origPos + animatedVertexList_[vertIdx].deltaMovement;
             }
         }
 
@@ -307,15 +310,15 @@ void GeomReplicator::MoveVerts()
     // update batch idx
     currentVertexIdx_ += batchCount_;
 
-    if (currentVertexIdx_*numVertsPerGeom >= movementList_.Size()) 
+    if (currentVertexIdx_*numVertsPerGeom >= animatedVertexList_.Size()) 
     {
         currentVertexIdx_ = 0;
     }
 }
 
-void GeomReplicator::StopWindVelocity(bool stop)
+void GeomReplicator::WindAnimationEnabled(bool enable)
 {
-    if (stop)
+    if (enable)
     {
         SubscribeToEvent(E_UPDATE, URHO3D_HANDLER(GeomReplicator, HandleUpdate));
     }
@@ -333,7 +336,7 @@ void GeomReplicator::HandleUpdate(StringHash eventType, VariantMap& eventData)
 
     if ( timerUpdate_.GetMSec(false) >= FrameRate_MSec )
     {
-        MoveVerts();
+        AnimateVerts();
 
         timerUpdate_.Reset();
     }
@@ -436,7 +439,7 @@ void StaticScene::CreateScene()
         vegReplicator_->Replicate(qpList_, lightDir );
 
         // specify which verts in the geom to move
-        // - for the vegbrush model, the top vert indeces are index 2 and 3
+        // - for the vegbrush model, the top two vertex indeces are 2 and 3
         PODVector<unsigned> topVerts;
         topVerts.Push(2);
         topVerts.Push(3);
@@ -450,7 +453,8 @@ void StaticScene::CreateScene()
         // specify the cycle timer
         float cycleTimer = 0.4f;
 
-        vegReplicator_->ApplyWindVelocity(topVerts, batchCount, windVel, cycleTimer);
+        vegReplicator_->ConfigWindVelocity(topVerts, batchCount, windVel, cycleTimer);
+        vegReplicator_->WindAnimationEnabled(true);
     }
 
     // camera
