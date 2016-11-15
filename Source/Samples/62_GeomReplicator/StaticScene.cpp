@@ -39,6 +39,8 @@
 #include <Urho3D/UI/Font.h>
 #include <Urho3D/UI/Text.h>
 #include <Urho3D/UI/UI.h>
+#include <Urho3D/UI/Text3D.h>
+#include <Urho3D/Graphics/DebugRenderer.h>
 
 #include <stdio.h>
 
@@ -112,6 +114,24 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
 
                 // bbox
                 bbox.Merge(nPos);
+
+                // text3d dbg
+                if ( i == 0 )
+                {
+                    ResourceCache* cache = GetSubsystem<ResourceCache>();
+                    //Scene *scene = GetScene();
+                    Node* textNode = GetScene()->CreateChild();
+                    textNode->SetPosition(nPos + Vector3(0.0f, 0.1f, 0.0f));
+                    textNode->SetEnabled(false);
+
+                    Text3D* text3d = textNode->CreateComponent<Text3D>();
+                    text3d->SetText( String(j) );
+                    text3d->SetFont(cache->GetResource<Font>("Fonts/Anonymous Pro.ttf"), 12);
+                    text3d->SetColor(Color::YELLOW);
+                    text3d->SetFaceCameraMode(FC_ROTATE_XYZ);
+
+                    nodeText3DVertList_.Push(textNode);
+                }
 
                 // normal - let's not make any assumptions that the normals exist for every model
                 if ( uElementMask & MASK_NORMAL )
@@ -279,6 +299,13 @@ void GeomReplicator::AnimateVerts()
                     animatedVertexList_[vertIdx].reversing = false;
                 }
             }
+
+            // dbg text3d
+            if ( showGeomVertIndeces_ && currentVertexIdx_ == 0 && i == 0 )
+            {
+                Vector3 pos = animatedVertexList_[vertIdx].origPos + animatedVertexList_[vertIdx].deltaMovement;
+                nodeText3DVertList_[vertIdx]->SetPosition(pos);
+            }
         }
     }
 
@@ -328,6 +355,30 @@ void GeomReplicator::WindAnimationEnabled(bool enable)
     }
 }
 
+void GeomReplicator::ShowGeomVertIndeces(bool show)
+{
+    showGeomVertIndeces_ = show;
+
+    for ( unsigned i = 0; i < nodeText3DVertList_.Size(); ++i )
+    {
+        nodeText3DVertList_[i]->SetEnabled( showGeomVertIndeces_ );
+    }
+}
+
+void GeomReplicator::RenderGeomVertIndeces()
+{
+    if ( showGeomVertIndeces_ )
+    {
+        DebugRenderer *dbgRenderer = GetScene()->GetComponent<DebugRenderer>();
+
+        for ( unsigned i = 1; i < nodeText3DVertList_.Size(); ++i )
+        {
+            dbgRenderer->AddLine( nodeText3DVertList_[i-1]->GetPosition(), nodeText3DVertList_[i]->GetPosition(), Color::GREEN );
+        }
+        dbgRenderer->AddLine( nodeText3DVertList_[0]->GetPosition(), nodeText3DVertList_[nodeText3DVertList_.Size()-1]->GetPosition(), Color::GREEN );
+    }
+}
+
 void GeomReplicator::HandleUpdate(StringHash eventType, VariantMap& eventData)
 {
     using namespace Update;
@@ -340,6 +391,8 @@ void GeomReplicator::HandleUpdate(StringHash eventType, VariantMap& eventData)
 
         timerUpdate_.Reset();
     }
+
+    RenderGeomVertIndeces();
 }
 
 //=============================================================================
@@ -388,6 +441,7 @@ void StaticScene::CreateScene()
     scene_ = new Scene(context_);
 
     scene_->CreateComponent<Octree>();
+    scene_->CreateComponent<DebugRenderer>();
 
     Node* planeNode = scene_->CreateChild("Plane");
     planeNode->SetScale(Vector3(100.0f, 1.0f, 100.0f));
@@ -455,6 +509,7 @@ void StaticScene::CreateScene()
 
         vegReplicator_->ConfigWindVelocity(topVerts, batchCount, windVel, cycleTimer);
         vegReplicator_->WindAnimationEnabled(true);
+        vegReplicator_->ShowGeomVertIndeces(true);
     }
 
     // camera

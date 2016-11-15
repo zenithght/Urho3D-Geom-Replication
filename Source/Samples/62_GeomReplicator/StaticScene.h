@@ -28,6 +28,7 @@ namespace Urho3D
 {
 class Node;
 class Scene;
+class Text3D;
 }
 
 //=============================================================================
@@ -65,7 +66,7 @@ public:
     }
 
     GeomReplicator(Context *context) 
-        : StaticModel(context), numVertsPerGeom(0), batchCount_(0)
+        : StaticModel(context), numVertsPerGeom(0), batchCount_(0), showGeomVertIndeces_(false)
     {
     }
 
@@ -77,10 +78,12 @@ public:
     bool ConfigWindVelocity(const PODVector<unsigned> &vertIndecesToMove, unsigned batchCount, 
                             const Vector3 &velocity, float cycleTimer);
     void WindAnimationEnabled(bool enable);
+    void ShowGeomVertIndeces(bool show);
 
 protected:
     unsigned ReplicateIndeces(IndexBuffer *idxbuffer, unsigned numVertices, unsigned expandSize);
     void AnimateVerts();
+    void RenderGeomVertIndeces();
     void HandleUpdate(StringHash eventType, VariantMap& eventData);
 
 protected:
@@ -94,6 +97,10 @@ protected:
     Vector3                     windVelocity_;
     float                       cycleTimer_;
     float                       timeStepAccum_;
+
+    // dbg
+    Vector<Node*>               nodeText3DVertList_;
+    bool                        showGeomVertIndeces_;
 
 protected:
     enum FrameRateType { FrameRate_MSec = 32    };
