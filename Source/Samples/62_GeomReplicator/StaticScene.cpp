@@ -91,6 +91,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
         {
             Quaternion rot(qplist[i].rot);
             Matrix3x4 mat(qplist[i].pos, rot, qplist[i].scale);
+            unsigned begOfGeomAnimVertIndex = animatedVertexList_.Size();
 
             for ( unsigned j = 0; j < numVertices; ++j )
             {
@@ -110,6 +111,12 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
                 // for movement
                 MoveAccumulator movPt;
                 movPt.origPos = nPos;
+
+                // sync timers for verts in the same geom
+                if ( j > 0 )
+                {
+                    movPt.timeAccumlated = animatedVertexList_[begOfGeomAnimVertIndex].timeAccumlated;
+                }
                 animatedVertexList_.Push(movPt);
 
                 // bbox
@@ -268,6 +275,7 @@ void GeomReplicator::AnimateVerts()
         for ( unsigned j = 0; j < vertIndecesToMove_.Size(); ++j )
         {
             unsigned vertIdx = idx + vertIndecesToMove_[j];
+
             int ielptime = animatedVertexList_[vertIdx].timer.GetMSec(true);
             if ( ielptime > MaxTime_Elapsed ) ielptime = MaxTime_Elapsed;
 
