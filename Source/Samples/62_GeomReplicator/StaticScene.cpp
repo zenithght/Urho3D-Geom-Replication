@@ -52,6 +52,11 @@
 //=============================================================================
 #define ONE_SEC_DURATION 1000
 
+// wrap vert index visualization helper around preprocessor for optimization
+#if defined(_DEBUG) || defined(DEBUG)
+#define VERT_INDEX_VISUAL
+#endif
+
 //=============================================================================
 //=============================================================================
 unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vector3 &normalOverride)
@@ -122,6 +127,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
                 // bbox
                 bbox.Merge(nPos);
 
+                #ifdef VERT_INDEX_VISUAL
                 // text3d dbg
                 if ( i == 0 )
                 {
@@ -139,6 +145,7 @@ unsigned GeomReplicator::Replicate(const PODVector<PRotScale> &qplist, const Vec
 
                     nodeText3DVertList_.Push(textNode);
                 }
+                #endif
 
                 // normal - let's not make any assumptions that the normals exist for every model
                 if ( uElementMask & MASK_NORMAL )
@@ -309,11 +316,13 @@ void GeomReplicator::AnimateVerts()
             }
 
             // dbg text3d
+            #ifdef VERT_INDEX_VISUAL
             if ( showGeomVertIndeces_ && currentVertexIdx_ == 0 && i == 0 )
             {
                 Vector3 pos = animatedVertexList_[vertIdx].origPos + animatedVertexList_[vertIdx].deltaMovement;
                 nodeText3DVertList_[vertIdx]->SetPosition(pos);
             }
+            #endif
         }
     }
 
@@ -365,16 +374,19 @@ void GeomReplicator::WindAnimationEnabled(bool enable)
 
 void GeomReplicator::ShowGeomVertIndeces(bool show)
 {
+    #ifdef VERT_INDEX_VISUAL
     showGeomVertIndeces_ = show;
 
     for ( unsigned i = 0; i < nodeText3DVertList_.Size(); ++i )
     {
         nodeText3DVertList_[i]->SetEnabled( showGeomVertIndeces_ );
     }
+    #endif
 }
 
 void GeomReplicator::RenderGeomVertIndeces()
 {
+    #ifdef VERT_INDEX_VISUAL
     if ( showGeomVertIndeces_ )
     {
         DebugRenderer *dbgRenderer = GetScene()->GetComponent<DebugRenderer>();
@@ -385,6 +397,7 @@ void GeomReplicator::RenderGeomVertIndeces()
         }
         dbgRenderer->AddLine( nodeText3DVertList_[0]->GetPosition(), nodeText3DVertList_[nodeText3DVertList_.Size()-1]->GetPosition(), Color::GREEN );
     }
+    #endif
 }
 
 void GeomReplicator::HandleUpdate(StringHash eventType, VariantMap& eventData)
